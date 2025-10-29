@@ -306,6 +306,25 @@ func TestLinux_clientStationInfoOK(t *testing.T) {
 			ReceiveBitrate:     260000000,
 			TransmitBitrate:    260000000,
 		},
+		{
+			InterfaceIndex:     1,
+			HardwareAddr:       net.HardwareAddr{0x40, 0xa5, 0xef, 0xd9, 0x96, 0x6f},
+			Connected:          60 * time.Minute,
+			Inactive:           8 * time.Millisecond,
+			ReceivedBytes:      2000,
+			TransmittedBytes:   4000,
+			ReceivedPackets:    20,
+			TransmittedPackets: 40,
+			Signal:             -25,
+			SignalAverage:      -27,
+			TransmitRetries:    10,
+			TransmitFailed:     4,
+			BeaconLoss:         6,
+			ReceiveBitrate:     260000000,
+			TransmitBitrate:    260000000,
+			RX_MCS:             1,
+			TX_MCS:             2,
+		},
 	}
 
 	ifi := &Interface{
@@ -519,6 +538,7 @@ func (s *StationInfo) attributes() []netlink.Attribute {
 					Data: mustMarshalAttributes([]netlink.Attribute{
 						{Type: unix.NL80211_RATE_INFO_BITRATE, Data: nlenc.Uint16Bytes(uint16(bitrateAttr(s.ReceiveBitrate)))},
 						{Type: unix.NL80211_RATE_INFO_BITRATE32, Data: nlenc.Uint32Bytes(bitrateAttr(s.ReceiveBitrate))},
+						{Type: unix.NL80211_RATE_INFO_MCS, Data: nlenc.Uint8Bytes(uint8(s.RX_MCS))},
 					}),
 				},
 				{
@@ -526,6 +546,7 @@ func (s *StationInfo) attributes() []netlink.Attribute {
 					Data: mustMarshalAttributes([]netlink.Attribute{
 						{Type: unix.NL80211_RATE_INFO_BITRATE, Data: nlenc.Uint16Bytes(uint16(bitrateAttr(s.TransmitBitrate)))},
 						{Type: unix.NL80211_RATE_INFO_BITRATE32, Data: nlenc.Uint32Bytes(bitrateAttr(s.TransmitBitrate))},
+						{Type: unix.NL80211_RATE_INFO_MCS, Data: nlenc.Uint8Bytes(uint8(s.TX_MCS))},
 					}),
 				},
 			}),
