@@ -261,6 +261,12 @@ type StationInfo struct {
 
 	// The current transmit MCS indexes (for HT/VHT/HE rates).
 	TX_MCS int
+
+	// The current receive MCS indexes (for VHT rates).
+	RX_VHT_MCS int
+
+	// The current transmit MCS indexes (for VHT rates).
+	TX_VHT_MCS int
 }
 
 // BSSLoad is an Information Element containing measurements of the load on the BSS.
