@@ -192,6 +192,12 @@ type StationInfo struct {
 
 	// The number of times a beacon loss was detected.
 	BeaconLoss int
+
+	// The current receive MCS indexes (for HT/VHT/HE rates).
+	RX_MCS int
+
+	// The current transmit MCS indexes (for HT/VHT/HE rates).
+	TX_MCS int
 }
 
 // BSSLoad is an Information Element containing measurements of the load on the BSS.

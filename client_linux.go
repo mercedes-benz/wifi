@@ -743,8 +743,10 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 			switch a.Type {
 			case unix.NL80211_STA_INFO_RX_BITRATE:
 				info.ReceiveBitrate = rate.Bitrate
+				info.RX_MCS = rate.MCS
 			case unix.NL80211_STA_INFO_TX_BITRATE:
 				info.TransmitBitrate = rate.Bitrate
+				info.TX_MCS = rate.MCS
 			}
 		}
 
@@ -767,6 +769,12 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 type rateInfo struct {
 	// Bitrate in bits per second.
 	Bitrate int
+
+	// MCS is the modulation and coding scheme index.
+	MCS int
+
+	// VHT-MCS is the very high throughput modulation and coding scheme index.
+	VHTMCS int
 }
 
 // parseRateInfo parses a rateInfo from netlink attributes.
@@ -781,6 +789,10 @@ func parseRateInfo(b []byte) (*rateInfo, error) {
 		switch a.Type {
 		case unix.NL80211_RATE_INFO_BITRATE32:
 			info.Bitrate = int(nlenc.Uint32(a.Data))
+		case unix.NL80211_RATE_INFO_MCS:
+			info.MCS = int(nlenc.Uint8(a.Data))
+		case unix.NL80211_RATE_INFO_VHT_MCS:
+			info.VHTMCS = int(nlenc.Uint8(a.Data))
 		}
 
 		// Only use 16-bit counters if the 32-bit counters are not present.
