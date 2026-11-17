@@ -499,6 +499,18 @@ type StationInfo struct {
 	// The average signal strength, in dBm.
 	SignalAverage int
 
+	// The signal strength of the last received PPDU per antenna chain, in
+	// dBm. Empty if the driver does not report per-chain signal.
+	ChainSignal []int
+
+	// The average signal strength per antenna chain, in dBm. Empty if the
+	// driver does not report per-chain signal.
+	ChainSignalAverage []int
+
+	// The average signal strength of received beacons, in dBm. Zero if the
+	// driver does not report it.
+	BeaconSignalAverage int
+
 	// The number of times the station has had to retry while sending a packet.
 	TransmitRetries int
 

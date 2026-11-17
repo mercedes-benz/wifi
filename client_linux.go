@@ -26,7 +26,9 @@ var (
 	ErrNotSupported      = errors.New("not supported")
 	ErrScanGroupNotFound = errors.New("scan multicast group unavailable")
 	ErrScanAborted       = errors.New("scan aborted by the kernel")
-	ErrScanValidation    = errors.New("scan validation failed")
+
+	errInvalidChainSignal = errors.New("invalid chain signal attribute")
+	ErrScanValidation     = errors.New("scan validation failed")
 )
 
 // A client is the Linux implementation of osClient, which makes use of
@@ -1148,6 +1150,25 @@ func ParseStationInfo(b []byte) (*StationInfo, error) {
 	return nil, os.ErrNotExist
 }
 
+// parseChainSignals parses a nested netlink attribute holding one s8 signal
+// value (in dBm) per antenna chain.
+func parseChainSignals(b []byte) ([]int, error) {
+	attrs, err := netlink.UnmarshalAttributes(b)
+	if err != nil {
+		return nil, err
+	}
+
+	signals := make([]int, 0, len(attrs))
+	for _, a := range attrs {
+		if len(a.Data) < 1 {
+			return nil, errInvalidChainSignal
+		}
+		signals = append(signals, int(int8(a.Data[0])))
+	}
+
+	return signals, nil
+}
+
 // parseAttributes parses netlink attributes into a StationInfo's fields.
 func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 	for _, a := range attrs {
@@ -1170,6 +1191,21 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 			info.Signal = int(int8(a.Data[0]))
 		case unix.NL80211_STA_INFO_SIGNAL_AVG:
 			info.SignalAverage = int(int8(a.Data[0]))
+		case unix.NL80211_STA_INFO_CHAIN_SIGNAL, unix.NL80211_STA_INFO_CHAIN_SIGNAL_AVG:
+			// Nested array of s8 values, one per chain. Only the order is
+			// meaningful, as with iw.
+			chains, err := parseChainSignals(a.Data)
+			if err != nil {
+				return err
+			}
+
+			if a.Type == unix.NL80211_STA_INFO_CHAIN_SIGNAL {
+				info.ChainSignal = chains
+			} else {
+				info.ChainSignalAverage = chains
+			}
+		case unix.NL80211_STA_INFO_BEACON_SIGNAL_AVG:
+			info.BeaconSignalAverage = int(int8(a.Data[0]))
 		case unix.NL80211_STA_INFO_RX_PACKETS:
 			info.ReceivedPackets = int(binary.NativeEndian.Uint32(a.Data))
 		case unix.NL80211_STA_INFO_TX_PACKETS:

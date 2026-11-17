@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
@@ -274,23 +275,26 @@ func TestLinux_clientStationInfoNoMessagesIsNotExist(t *testing.T) {
 func TestLinux_clientStationInfoOK(t *testing.T) {
 	want := []*StationInfo{
 		{
-			InterfaceIndex:     1,
-			HardwareAddr:       net.HardwareAddr{0xb8, 0x27, 0xeb, 0xd5, 0xf3, 0xef},
-			Connected:          30 * time.Minute,
-			Inactive:           4 * time.Millisecond,
-			ReceivedBytes:      1000,
-			TransmittedBytes:   2000,
-			ReceivedPackets:    10,
-			TransmittedPackets: 20,
-			Signal:             -50,
-			SignalAverage:      -53,
-			TransmitRetries:    5,
-			TransmitFailed:     2,
-			BeaconLoss:         3,
-			ReceiveBitrate:     130000000,
-			TransmitBitrate:    130000000,
-			ReceiveRateInfo:    RateInfo{Bitrate: 130000000, ModulationType: RateModulationInfoTypeVHT, Modulation: VHTModulationInfo{BaseModulationInfo: BaseModulationInfo{MCS: 5, NSS: 2}, ShortGI: true}, ChannelWidth: ChannelWidth80P80},
-			TransmitRateInfo:   RateInfo{Bitrate: 130000000, ModulationType: RateModulationInfoTypeVHT, Modulation: VHTModulationInfo{BaseModulationInfo: BaseModulationInfo{MCS: 3, NSS: 1}, ShortGI: true}, ChannelWidth: ChannelWidth40},
+			InterfaceIndex:      1,
+			HardwareAddr:        net.HardwareAddr{0xb8, 0x27, 0xeb, 0xd5, 0xf3, 0xef},
+			Connected:           30 * time.Minute,
+			Inactive:            4 * time.Millisecond,
+			ReceivedBytes:       1000,
+			TransmittedBytes:    2000,
+			ReceivedPackets:     10,
+			TransmittedPackets:  20,
+			Signal:              -50,
+			SignalAverage:       -53,
+			ChainSignal:         []int{-50, -83},
+			ChainSignalAverage:  []int{-52, -85},
+			BeaconSignalAverage: -54,
+			TransmitRetries:     5,
+			TransmitFailed:      2,
+			BeaconLoss:          3,
+			ReceiveBitrate:      130000000,
+			TransmitBitrate:     130000000,
+			ReceiveRateInfo:     RateInfo{Bitrate: 130000000, ModulationType: RateModulationInfoTypeVHT, Modulation: VHTModulationInfo{BaseModulationInfo: BaseModulationInfo{MCS: 5, NSS: 2}, ShortGI: true}, ChannelWidth: ChannelWidth80P80},
+			TransmitRateInfo:    RateInfo{Bitrate: 130000000, ModulationType: RateModulationInfoTypeVHT, Modulation: VHTModulationInfo{BaseModulationInfo: BaseModulationInfo{MCS: 3, NSS: 1}, ShortGI: true}, ChannelWidth: ChannelWidth40},
 		},
 		{
 			InterfaceIndex:     1,
@@ -787,7 +791,7 @@ func (s *StationInfo) attributes() []netlink.Attribute {
 		{
 			// Linux 7.3+ sets netlink.Nested on STA_INFO.
 			Type: unix.NL80211_ATTR_STA_INFO | netlink.Nested,
-			Data: mustMarshalAttributes([]netlink.Attribute{
+			Data: mustMarshalAttributes(append(s.signalAttributes(), []netlink.Attribute{
 				{Type: unix.NL80211_STA_INFO_CONNECTED_TIME, Data: nlenc.Uint32Bytes(uint32(s.Connected.Seconds()))},
 				{Type: unix.NL80211_STA_INFO_INACTIVE_TIME, Data: nlenc.Uint32Bytes(uint32(s.Inactive.Seconds() * 1000))},
 				{Type: unix.NL80211_STA_INFO_RX_BYTES, Data: nlenc.Uint32Bytes(uint32(s.ReceivedBytes))},
@@ -823,9 +827,37 @@ func (s *StationInfo) attributes() []netlink.Attribute {
 						channelWithAttributes(s.TransmitRateInfo.ChannelWidth),
 					)),
 				},
-			}),
+			}...)),
 		},
 	}
+}
+
+// signalAttributes returns the optional per-chain and beacon signal attributes.
+func (s *StationInfo) signalAttributes() []netlink.Attribute {
+	var attrs []netlink.Attribute
+	for _, c := range []struct {
+		typ     uint16
+		signals []int
+	}{
+		{unix.NL80211_STA_INFO_CHAIN_SIGNAL, s.ChainSignal},
+		{unix.NL80211_STA_INFO_CHAIN_SIGNAL_AVG, s.ChainSignalAverage},
+	} {
+		if len(c.signals) == 0 {
+			continue
+		}
+
+		var nested []netlink.Attribute
+		for i, v := range c.signals {
+			nested = append(nested, netlink.Attribute{Type: uint16(i), Data: []byte{byte(int8(v))}})
+		}
+		attrs = append(attrs, netlink.Attribute{Type: c.typ, Data: mustMarshalAttributes(nested)})
+	}
+
+	if s.BeaconSignalAverage != 0 {
+		attrs = append(attrs, netlink.Attribute{Type: unix.NL80211_STA_INFO_BEACON_SIGNAL_AVG, Data: []byte{byte(int8(s.BeaconSignalAverage))}})
+	}
+
+	return attrs
 }
 
 func (s *SurveyInfo) attributes() []netlink.Attribute {
@@ -1411,5 +1443,30 @@ func TestLinux_GetRegulatoryDomain_OK(t *testing.T) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("unexpected region (-want +got):\n%s", diff)
+	}
+}
+
+func TestLinux_parseChainSignals(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []netlink.Attribute
+		want []int
+		err  bool
+	}{
+		{name: "empty"},
+		{name: "two chains", in: []netlink.Attribute{{Type: 0, Data: []byte{0xcd}}, {Type: 1, Data: []byte{0xad}}}, want: []int{-51, -83}},
+		{name: "empty value", in: []netlink.Attribute{{Type: 0}}, err: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseChainSignals(mustMarshalAttributes(tt.in))
+			if (err != nil) != tt.err {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("unexpected signals (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
